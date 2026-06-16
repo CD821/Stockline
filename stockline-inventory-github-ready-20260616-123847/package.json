@@ -1,0 +1,19 @@
+{
+  "name": "stockline-inventory",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env serve.mjs",
+    "start": "node --env-file-if-exists=.env serve.mjs",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "db:seed": "node --env-file-if-exists=.env scripts/seed.mjs",
+    "db:setup": "npm run db:migrate && npm run db:seed",
+    "check": "node --check serve.mjs && node --check app.js && node --check scripts/seed.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
