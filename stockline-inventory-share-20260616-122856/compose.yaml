@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: stockline
+      POSTGRES_USER: stockline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stockline-dev-only}
+    ports:
+      - "5432:5432"
+    volumes:
+      - stockline-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockline -d stockline"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  stockline-postgres:
