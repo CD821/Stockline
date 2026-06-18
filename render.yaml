@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: stockline-inventory
+    runtime: node
+    region: ohio
+    plan: starter
+    buildCommand: npm ci
+    preDeployCommand: npm run db:setup
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SESSION_HOURS
+        value: "12"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: stockline-postgres
+          property: connectionString
+      - key: INITIAL_ADMIN_NAME
+        value: Carlos Lopez
+      - key: INITIAL_ADMIN_USERNAME
+        value: carlos
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: stockline-postgres
+    region: ohio
+    plan: basic-256mb
+    postgresMajorVersion: "18"
+    databaseName: stockline
+    user: stockline
+    ipAllowList: []
