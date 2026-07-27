@@ -26,12 +26,14 @@ This project is ready to upload to a private GitHub repository. Include the full
 project folder, including:
 
 - `.env.example`
+- `.env.supabase.example`
 - `.gitignore`
 - `README.md`
 - `package.json` and `package-lock.json`
 - `serve.mjs`, `app.js`, `styles.css`, and `index.html`
 - `db/`, `lib/`, and `scripts/`
 - `render.yaml` if deploying with Render
+- `render-supabase.yaml` if deploying the web app on Render with Supabase as the database
 
 Do not upload `.env` or `node_modules`. The `.gitignore` file is already configured
 to keep local passwords and installed packages out of GitHub.
@@ -91,6 +93,59 @@ accounts.
 
 The online PostgreSQL database is separate from the local database on this computer.
 After publishing, use the online site as the authoritative inventory system.
+
+## Use Supabase PostgreSQL
+
+Supabase can host the PostgreSQL database for this app. The app still runs as a Node
+web service on Render, Railway, Fly.io, or another Node host.
+
+1. Create a Supabase project.
+2. Open the Supabase project dashboard and click **Connect**.
+3. For a normal hosted Node app, copy the **Session pooler** URI. Supabase's shared
+   pooler works on IPv4 and is the safest default for common app hosts.
+4. Copy `.env.supabase.example` to `.env`.
+5. Replace `DATABASE_URL` with the Supabase URI and replace the password placeholder.
+6. Keep these settings:
+
+```powershell
+DATABASE_SSL=require
+DATABASE_SSL_REJECT_UNAUTHORIZED=true
+DATABASE_POOL_SIZE=3
+```
+
+7. Verify the connection:
+
+```powershell
+npm run db:check
+```
+
+8. Create the tables and import the starting inventory:
+
+```powershell
+npm run db:setup
+```
+
+9. Start the app:
+
+```powershell
+npm start
+```
+
+For production hosting, add these environment variables in the host dashboard instead
+of committing `.env`:
+
+- `DATABASE_URL`: Supabase Session pooler URI
+- `DATABASE_SSL=require`
+- `DATABASE_SSL_REJECT_UNAUTHORIZED=true`
+- `DATABASE_POOL_SIZE=3`
+- `NODE_ENV=production`
+- `HOST=0.0.0.0`
+- `COOKIE_SECURE=true`
+- `INITIAL_ADMIN_PASSWORD`: a private 12+ character password
+
+If you deploy on Render while using Supabase for the database, use
+`render-supabase.yaml` as the blueprint reference. The original `render.yaml` creates
+a Render PostgreSQL database instead.
 
 ## Refresh imported inventory
 

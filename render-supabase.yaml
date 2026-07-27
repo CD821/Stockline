@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: stockline-inventory
+    runtime: node
+    region: ohio
+    plan: starter
+    buildCommand: npm ci
+    preDeployCommand: npm run db:setup
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SESSION_HOURS
+        value: "12"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: require
+      - key: DATABASE_SSL_REJECT_UNAUTHORIZED
+        value: "true"
+      - key: DATABASE_POOL_SIZE
+        value: "3"
+      - key: INITIAL_ADMIN_NAME
+        value: Carlos Lopez
+      - key: INITIAL_ADMIN_USERNAME
+        value: carlos
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
