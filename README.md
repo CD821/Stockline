@@ -150,8 +150,9 @@ a Render PostgreSQL database instead.
 
 ## Publish on Vercel with Supabase
 
-This project includes `api/index.js` and `vercel.json` so Vercel can run the same
-Node request handler used by the local app. Supabase remains the database.
+This project includes `api/` and `vercel.json` so Vercel can serve the static
+website files normally while routing `/api/*` requests to the same Node request
+handler used by the local app. Supabase remains the database.
 
 1. Make sure the Supabase database is initialized:
 

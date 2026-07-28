@@ -3,12 +3,9 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30
+    },
+    "api/[...path].js": {
+      "maxDuration": 30
     }
-  },
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js?__stockline_path=$1"
-    }
-  ]
+  }
 }
