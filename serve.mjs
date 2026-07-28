@@ -1,7 +1,7 @@
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { databaseHealth, pool, requirePool, withTransaction } from "./lib/db.mjs";
 import {
   createSessionToken,
@@ -907,7 +907,7 @@ function serveStatic(request, response, url) {
   createReadStream(file).pipe(response);
 }
 
-const server = createServer(async (request, response) => {
+export async function handleRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   try {
     if (url.pathname.startsWith("/api/")) {
@@ -926,21 +926,39 @@ const server = createServer(async (request, response) => {
       ...(statusCode === 503 ? { detail: error.message } : {}),
     });
   }
-});
-
-server.listen(port, host, () => {
-  console.log(`Stockline listening on ${host}:${port}`);
-  if (!pool) {
-    console.warn(
-      "DATABASE_URL is not configured. The UI will load, but database actions are unavailable.",
-    );
-  }
-});
-
-async function shutdown() {
-  server.close();
-  await pool?.end();
 }
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+export function createStocklineServer() {
+  return createServer(handleRequest);
+}
+
+function isDirectRun() {
+  return Boolean(
+    process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href,
+  );
+}
+
+let server;
+
+if (isDirectRun()) {
+  server = createStocklineServer();
+
+  server.listen(port, host, () => {
+    console.log(`Stockline listening on ${host}:${port}`);
+    if (!pool) {
+      console.warn(
+        "DATABASE_URL is not configured. The UI will load, but database actions are unavailable.",
+      );
+    }
+  });
+
+  async function shutdown() {
+    if (server) {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    await pool?.end();
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+}

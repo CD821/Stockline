@@ -30,8 +30,9 @@ project folder, including:
 - `.gitignore`
 - `README.md`
 - `package.json` and `package-lock.json`
-- `serve.mjs`, `app.js`, `styles.css`, and `index.html`
+- `serve.mjs`, `api/`, `app.js`, `styles.css`, and `index.html`
 - `db/`, `lib/`, and `scripts/`
+- `vercel.json` if deploying with Vercel
 - `render.yaml` if deploying with Render
 - `render-supabase.yaml` if deploying the web app on Render with Supabase as the database
 
@@ -96,8 +97,8 @@ After publishing, use the online site as the authoritative inventory system.
 
 ## Use Supabase PostgreSQL
 
-Supabase can host the PostgreSQL database for this app. The app still runs as a Node
-web service on Render, Railway, Fly.io, or another Node host.
+Supabase can host the PostgreSQL database for this app. The app can run on Vercel,
+Render, Railway, Fly.io, or another Node host.
 
 1. Create a Supabase project.
 2. Open the Supabase project dashboard and click **Connect**.
@@ -109,7 +110,7 @@ web service on Render, Railway, Fly.io, or another Node host.
 
 ```powershell
 DATABASE_SSL=require
-DATABASE_SSL_REJECT_UNAUTHORIZED=true
+DATABASE_SSL_REJECT_UNAUTHORIZED=false
 DATABASE_POOL_SIZE=3
 ```
 
@@ -136,7 +137,7 @@ of committing `.env`:
 
 - `DATABASE_URL`: Supabase Session pooler URI
 - `DATABASE_SSL=require`
-- `DATABASE_SSL_REJECT_UNAUTHORIZED=true`
+- `DATABASE_SSL_REJECT_UNAUTHORIZED=false`
 - `DATABASE_POOL_SIZE=3`
 - `NODE_ENV=production`
 - `HOST=0.0.0.0`
@@ -146,6 +147,51 @@ of committing `.env`:
 If you deploy on Render while using Supabase for the database, use
 `render-supabase.yaml` as the blueprint reference. The original `render.yaml` creates
 a Render PostgreSQL database instead.
+
+## Publish on Vercel with Supabase
+
+This project includes `api/index.js` and `vercel.json` so Vercel can run the same
+Node request handler used by the local app. Supabase remains the database.
+
+1. Make sure the Supabase database is initialized:
+
+```powershell
+npm run db:check
+npm run db:setup
+```
+
+2. Push this project to a private GitHub repository. Do not commit `.env` or
+   `node_modules`.
+3. In Vercel, choose **Add New > Project** and import the GitHub repository.
+4. If the repository contains the parent Codex folder, set **Root Directory** to
+   `outputs/stockline-inventory`. If the repository starts at this folder, leave the
+   root directory unchanged.
+5. Use the **Other** framework preset. Leave build and output settings at their
+   defaults.
+6. Add these Vercel environment variables:
+
+```text
+DATABASE_URL=postgres://postgres.PROJECT_REF:YOUR_DATABASE_PASSWORD@.../postgres
+DATABASE_SSL=require
+DATABASE_SSL_REJECT_UNAUTHORIZED=false
+DATABASE_POOL_SIZE=3
+SESSION_HOURS=12
+COOKIE_SECURE=true
+NODE_ENV=production
+INITIAL_ADMIN_NAME=Carlos Lopez
+INITIAL_ADMIN_USERNAME=carlos
+INITIAL_ADMIN_PASSWORD=<private 12+ character password for fresh databases>
+```
+
+7. Deploy. After deployment, test:
+
+```text
+https://your-project.vercel.app/api/health
+```
+
+Then open the main Vercel URL and sign in. Existing Supabase databases keep their
+current users and passwords; `INITIAL_ADMIN_PASSWORD` is only used when the seed
+script creates the first administrator on an empty database.
 
 ## Refresh imported inventory
 
