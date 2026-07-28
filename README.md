@@ -5,7 +5,7 @@ Inventory management backed by PostgreSQL, with:
 - Inventory fields for Name, ID Number, Division, Notes, On hand, Available, and Minimum quantity
 - Division choices limited to TTS and Bespoke
 - Active, Discontinued, and Archived item states that retain inventory history
-- 236 inventory lines imported from the SharePoint `Inventory` tab
+- 258 inventory lines imported from the SharePoint `Inventory` tab
 - Dispatch and restock transactions with row-level stock locking
 - Low-stock notifications and downloadable purchase lists
 - Editable users, roles, and permissions
