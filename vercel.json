@@ -3,9 +3,15 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30
-    },
-    "api/[...path].js": {
-      "maxDuration": 30
     }
-  }
+  },
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js?__stockline_path=api/$1"
+    }
+  ]
 }
