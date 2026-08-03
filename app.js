@@ -67,6 +67,8 @@ const ui = {
   lifecycle: "Current inventory",
   inventoryPage: 1,
   rowsPerPage: 50,
+  inventorySort: "",
+  inventorySortDirection: "asc",
   dispatchSearch: "",
   logSearch: "",
   logUser: "All users",
@@ -484,15 +486,11 @@ function filteredInventory() {
       item.name,
       item.description,
       item.idNumber,
-      item.division,
-      item.notes,
       item.status,
     ]
       .join(" ")
       .toLowerCase();
     const matchesQuery = !query || haystack.includes(query);
-    const matchesDivision =
-      ui.division === "All divisions" || item.division === ui.division;
     const low = isLow(item);
     const matchesStock =
       ui.stock === "All stock levels" ||
@@ -502,13 +500,62 @@ function filteredInventory() {
       ui.lifecycle === "All statuses" ||
       (ui.lifecycle === "Current inventory" && isCurrent(item)) ||
       item.status === ui.lifecycle;
-    return matchesQuery && matchesDivision && matchesStock && matchesLifecycle;
+    return matchesQuery && matchesStock && matchesLifecycle;
   });
+}
+
+function inventorySortValue(item, key) {
+  const values = {
+    name: item.name,
+    description: item.description,
+    idNumber: item.idNumber,
+    quantity: Number(item.quantity),
+    available: available(item),
+    minimum: Number(item.minimum),
+  };
+  return values[key];
+}
+
+function sortedInventory(items) {
+  if (!ui.inventorySort) return items;
+  const direction = ui.inventorySortDirection === "desc" ? -1 : 1;
+  const numericSorts = new Set(["quantity", "available", "minimum"]);
+  return [...items].sort((a, b) => {
+    const aValue = inventorySortValue(a, ui.inventorySort);
+    const bValue = inventorySortValue(b, ui.inventorySort);
+    const result = numericSorts.has(ui.inventorySort)
+      ? Number(aValue || 0) - Number(bValue || 0)
+      : String(aValue || "").localeCompare(String(bValue || ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+    if (result !== 0) return result * direction;
+    return String(a.name || "").localeCompare(String(b.name || ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+}
+
+function inventorySortButton(key, label) {
+  const active = ui.inventorySort === key;
+  const nextDirection =
+    active && ui.inventorySortDirection === "asc" ? "descending" : "ascending";
+  const indicator = active
+    ? ui.inventorySortDirection === "asc"
+      ? "^"
+      : "v"
+    : "";
+  return `
+    <button type="button" class="sort-header ${active ? "active" : ""}" data-inventory-sort="${key}" aria-label="Sort ${label} ${nextDirection}">
+      <span>${label}</span><span class="sort-indicator" aria-hidden="true">${indicator}</span>
+    </button>
+  `;
 }
 
 function inventoryView() {
   const lowItems = state.inventory.filter(isLow);
-  const filtered = filteredInventory();
+  const filtered = sortedInventory(filteredInventory());
   const pageSize = INVENTORY_PAGE_SIZE_OPTIONS.includes(Number(ui.rowsPerPage))
     ? Number(ui.rowsPerPage)
     : 50;
@@ -558,12 +605,8 @@ function inventoryView() {
           <div class="toolbar">
             <label class="search-field">
               ${icon("search", "icon-sm")}
-              <input id="inventory-search" type="search" placeholder="Search name, description, ID, or notes" value="${escapeHtml(ui.search)}" />
+              <input id="inventory-search" type="search" placeholder="Search name, description, or ID" value="${escapeHtml(ui.search)}" />
             </label>
-            <select id="division-filter" aria-label="Filter by division">
-              <option>All divisions</option>
-              ${DIVISIONS.map((division) => `<option ${ui.division === division ? "selected" : ""}>${division}</option>`).join("")}
-            </select>
             <select id="stock-filter" aria-label="Filter by stock level">
               ${["All stock levels", "In stock", "Low stock"].map((option) => `<option ${ui.stock === option ? "selected" : ""}>${option}</option>`).join("")}
             </select>
@@ -575,13 +618,12 @@ function inventoryView() {
             <div class="table-scroller">
               <table class="data-table">
                 <colgroup>
-                  <col style="width: 100px" /><col style="width: 90px" /><col style="width: 78px" />
-                  <col style="width: 70px" /><col style="width: 75px" /><col style="width: 62px" />
-                  <col style="width: 70px" /><col style="width: 70px" /><col style="width: 64px" />
-                  <col style="width: 132px" />
+                  <col style="width: 180px" /><col style="width: 160px" /><col style="width: 110px" />
+                  <col style="width: 88px" /><col style="width: 88px" /><col style="width: 88px" />
+                  <col style="width: 100px" /><col style="width: 132px" />
                 </colgroup>
                 <thead>
-                  <tr><th>Name</th><th>Description</th><th>ID Number</th><th>Division</th><th>Notes</th><th>On hand</th><th>Available</th><th>Minimum</th><th>Status</th><th>Actions</th></tr>
+                  <tr><th>${inventorySortButton("name", "Name")}</th><th>${inventorySortButton("description", "Description")}</th><th>${inventorySortButton("idNumber", "ID Number")}</th><th>${inventorySortButton("quantity", "On hand")}</th><th>${inventorySortButton("available", "Available")}</th><th>${inventorySortButton("minimum", "Minimum")}</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   ${
@@ -596,7 +638,7 @@ function inventoryView() {
                             ),
                           )
                           .join("")
-                      : `<tr><td colspan="10"><div class="empty-state"><div><strong>No inventory found</strong><span>Try a different search or filter.</span></div></div></td></tr>`
+                      : `<tr><td colspan="8"><div class="empty-state"><div><strong>No inventory found</strong><span>Try a different search or filter.</span></div></div></td></tr>`
                   }
                 </tbody>
               </table>
@@ -649,8 +691,6 @@ function inventoryRow(item, canManageInventory, canDispatchInventory, canViewLog
       <td><span class="item-name"><strong>${escapeHtml(item.name)}</strong></span></td>
       <td class="truncate" title="${escapeHtml(item.description)}">${escapeHtml(item.description)}</td>
       <td>${escapeHtml(item.idNumber)}</td>
-      <td>${escapeHtml(item.division)}</td>
-      <td class="truncate notes-cell" title="${escapeHtml(item.notes)}">${escapeHtml(item.notes) || "—"}</td>
       <td class="quantity-cell"><strong>${formatNumber(item.quantity)}</strong></td>
       <td class="quantity-cell"><strong>${formatNumber(available(item))}</strong></td>
       <td>${formatNumber(item.minimum)}</td>
@@ -1061,11 +1101,7 @@ function inventoryModal() {
             <div class="form-group"><label for="item-name">Name</label><input class="field" id="item-name" name="name" value="${escapeHtml(item.name)}" required /></div>
             <div class="form-group"><label for="item-id-number">ID Number</label><input class="field" id="item-id-number" name="idNumber" value="${escapeHtml(item.idNumber)}" required /></div>
             <div class="form-group full"><label for="item-description">Description</label><input class="field" id="item-description" name="description" value="${escapeHtml(item.description)}" /></div>
-            ${
-              editing
-                ? `<div class="form-group"><label for="item-division">Division</label><select class="field" id="item-division" name="division">${DIVISIONS.map((division) => `<option ${item.division === division ? "selected" : ""}>${division}</option>`).join("")}</select></div>`
-                : `<div class="form-group"><label for="item-division">Division</label><input type="hidden" name="division" value="TTS" /><select class="field" id="item-division" disabled><option>TTS</option></select><span class="help-text">Division is selected when dispatching.</span></div>`
-            }
+            <input type="hidden" name="division" value="${escapeHtml(editing ? normalizeDivision(item.division) : "TTS")}" />
             ${
               editing
                 ? `<div class="form-group"><label for="item-status">Item status</label><select class="field" id="item-status" name="status">${ITEM_STATUSES.map((status) => `<option ${item.status === status ? "selected" : ""}>${status}</option>`).join("")}</select><span class="help-text">Discontinued stops restocking and reorder alerts. Archived hides the item by default and requires zero stock.</span></div>`
@@ -1326,10 +1362,19 @@ function bindInventoryControls() {
     next?.setSelectionRange(cursor, cursor);
   });
 
-  document.querySelector("#division-filter")?.addEventListener("change", (event) => {
-    ui.division = event.target.value;
-    ui.inventoryPage = 1;
-    render();
+  document.querySelectorAll("[data-inventory-sort]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextSort = button.dataset.inventorySort;
+      if (ui.inventorySort === nextSort) {
+        ui.inventorySortDirection =
+          ui.inventorySortDirection === "asc" ? "desc" : "asc";
+      } else {
+        ui.inventorySort = nextSort;
+        ui.inventorySortDirection = "asc";
+      }
+      ui.inventoryPage = 1;
+      render();
+    });
   });
 
   document.querySelector("#stock-filter")?.addEventListener("change", (event) => {

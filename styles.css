@@ -593,7 +593,7 @@ textarea.field {
 
 .data-table {
   width: 100%;
-  min-width: 815px;
+  min-width: 956px;
   border-collapse: collapse;
   table-layout: fixed;
 }
@@ -613,6 +613,32 @@ textarea.field {
   font-weight: 750;
   letter-spacing: 0.01em;
   white-space: nowrap;
+}
+
+.sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-weight: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sort-header:hover,
+.sort-header.active {
+  color: var(--teal-dark);
+}
+
+.sort-indicator {
+  min-width: 8px;
+  color: var(--teal);
+  font-size: 10px;
 }
 
 .data-table td {
