@@ -86,6 +86,36 @@ function normalizeDivision(value, itemId) {
   return "TTS";
 }
 
+function parseDispatchDetails(details = "") {
+  const values = { division: "TTS", destination: "", notes: "" };
+  const parts = String(details)
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    const [rawKey, ...rawValue] = part.split(":");
+    const value = rawValue.join(":").trim();
+    const key = rawKey.trim().toLowerCase();
+    if (value && key === "division") values.division = normalizeDivision(value);
+    else if (value && key === "destination") values.destination = value;
+    else if (value && key === "notes") values.notes = value;
+  }
+
+  if (!values.destination && parts.length) {
+    const [first, ...rest] = parts;
+    if (DIVISIONS.includes(first)) {
+      values.division = first;
+      values.destination = rest.shift() || "";
+    } else {
+      values.destination = first;
+    }
+    if (!values.notes && rest.length) values.notes = rest.join(" | ");
+  }
+
+  return values;
+}
+
 let state = {
   inventory: [],
   users: [],
@@ -359,7 +389,7 @@ function pageView() {
 function pageHeader(title, subtitle, actions = "") {
   return `
     <div class="page-header">
-      <div class="page-title"><h1>${title}</h1><p>${subtitle}</p></div>
+      <div class="page-title"><h1>${title}</h1>${subtitle ? `<p>${subtitle}</p>` : ""}</div>
       ${actions ? `<div class="page-actions">${actions}</div>` : ""}
     </div>
   `;
@@ -507,7 +537,7 @@ function inventoryView() {
 
   return `
     <section class="page">
-      ${pageHeader("Inventory", "Track stock, dispatch materials, and stay ahead of reorders.", `
+      ${pageHeader("Inventory", "", `
         <button class="button primary" data-open="add" ${canManageInventory ? "" : "disabled"}>${icon("plus", "icon-sm")} Add inventory</button>
         <button class="button teal-outline" data-open="dispatch" ${canDispatchInventory && hasDispatchableItems ? "" : "disabled"}>${icon("truck", "icon-sm")} Dispatch items</button>
       `)}
@@ -723,7 +753,7 @@ function logsView() {
           </select>
         </div>
         <div class="log-results">${logs.length} of ${state.logs.length} entries</div>
-        <div class="log-row header"><span>Date & time</span><span>User</span><span>Action</span><span>Item / details</span><span>Quantity</span></div>
+        <div class="log-row header"><span>Date & time</span><span>User</span><span>Action</span><span>Item / details</span><span>Quantity</span><span>Actions</span></div>
         <div>
           ${
             logs.length
@@ -736,6 +766,7 @@ function logsView() {
                         <span>${escapeHtml(entry.action)}</span>
                         <span><strong>${escapeHtml(entry.item)}</strong><br /><small>${escapeHtml(entry.details || "")}</small></span>
                         <span class="log-quantity ${Number(entry.quantity) < 0 ? "negative" : ""}">${entry.quantity === null ? "—" : `${entry.quantity > 0 ? "+" : ""}${formatNumber(entry.quantity)}`}</span>
+                        <span>${entry.action === "Dispatch" && can("dispatchInventory") ? `<button class="icon-button compact" data-action="editDispatchLog" data-id="${entry.id}" aria-label="Edit dispatch ticket">${icon("edit", "icon-sm")}</button>` : ""}</span>
                       </div>
                     `,
                   )
@@ -872,6 +903,7 @@ function rolePermissionCard(role, canManageUsers) {
 function modalView() {
   if (!ui.modal) return "";
   if (ui.modal === "dispatch") return dispatchModal();
+  if (ui.modal === "editDispatchLog") return dispatchTicketModal();
   if (ui.modal === "restock") return restockModal();
   if (ui.modal === "add" || ui.modal === "edit") return inventoryModal();
   if (ui.modal === "history") return historyModal();
@@ -888,6 +920,10 @@ function selectedItem() {
 
 function selectedUser() {
   return state.users.find((user) => user.id === ui.selectedId);
+}
+
+function selectedLog() {
+  return state.logs.find((entry) => entry.id === ui.selectedId);
 }
 
 function itemOptions(items, selected = "", withMeta = false) {
@@ -953,7 +989,8 @@ function dispatchModal() {
                 : `<option>No matching dispatchable items</option>`
             }</select></div>
             <div class="form-group"><label for="dispatch-quantity">Quantity</label><input class="field" id="dispatch-quantity" name="quantity" type="number" min="1" max="${canDispatchSelection ? available(item) : 1}" value="1" required ${canDispatchSelection ? "" : "disabled"} /><span class="help-text" id="available-help">Available: ${canDispatchSelection ? formatNumber(available(item)) : "0"}</span></div>
-            <div class="form-group"><label for="destination">Division / destination</label><input class="field" id="destination" name="destination" value="Warehouse A" required /></div>
+            <div class="form-group"><label for="dispatch-division">Division</label><select class="field" id="dispatch-division" name="division">${DIVISIONS.map((division) => `<option ${division === "TTS" ? "selected" : ""}>${division}</option>`).join("")}</select></div>
+            <div class="form-group"><label for="destination">Destination</label><input class="field" id="destination" name="destination" value="Warehouse A" required /></div>
             <div class="form-group full"><label for="dispatch-notes">Notes</label><textarea class="field" id="dispatch-notes" name="notes" placeholder="Job number, recipient, or reason"></textarea></div>
           </div>
           <div class="form-note">${icon("info", "icon-sm")}<span>This action subtracts from on-hand stock and records your user and timestamp in the audit log.</span></div>
@@ -961,6 +998,30 @@ function dispatchModal() {
       </form>
     `,
     `<button class="button" data-close>Cancel</button><button class="button primary" type="submit" form="dispatch-form" ${canDispatchSelection ? "" : "disabled"}>Confirm dispatch</button>`,
+  );
+}
+
+function dispatchTicketModal() {
+  const entry = selectedLog();
+  if (!entry || entry.action !== "Dispatch") return "";
+  const values = parseDispatchDetails(entry.details);
+  return modalShell(
+    "Edit dispatch ticket",
+    `
+      <form id="dispatch-ticket-form">
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="form-group full"><label>Item</label><div class="field readonly-field">${escapeHtml(entry.item)}</div></div>
+            <div class="form-group"><label>Quantity dispatched</label><div class="field readonly-field">${entry.quantity === null ? "-" : formatNumber(Math.abs(Number(entry.quantity)))}</div></div>
+            <div class="form-group"><label for="ticket-division">Division</label><select class="field" id="ticket-division" name="division">${DIVISIONS.map((division) => `<option ${values.division === division ? "selected" : ""}>${division}</option>`).join("")}</select></div>
+            <div class="form-group full"><label for="ticket-destination">Destination</label><input class="field" id="ticket-destination" name="destination" value="${escapeHtml(values.destination)}" required /></div>
+            <div class="form-group full"><label for="ticket-notes">Notes</label><textarea class="field" id="ticket-notes" name="notes" placeholder="Job number, recipient, or reason">${escapeHtml(values.notes)}</textarea></div>
+          </div>
+          <div class="form-note">${icon("info", "icon-sm")}<span>This updates the dispatch ticket details and records who edited it. Quantity stays locked so inventory counts do not change by accident.</span></div>
+        </div>
+      </form>
+    `,
+    `<button class="button" data-close>Cancel</button><button class="button primary" type="submit" form="dispatch-ticket-form">Save ticket</button>`,
   );
 }
 
@@ -999,8 +1060,12 @@ function inventoryModal() {
           <div class="form-grid">
             <div class="form-group"><label for="item-name">Name</label><input class="field" id="item-name" name="name" value="${escapeHtml(item.name)}" required /></div>
             <div class="form-group"><label for="item-id-number">ID Number</label><input class="field" id="item-id-number" name="idNumber" value="${escapeHtml(item.idNumber)}" required /></div>
-            <div class="form-group full"><label for="item-description">Description</label><input class="field" id="item-description" name="description" value="${escapeHtml(item.description)}" required /></div>
-            <div class="form-group"><label for="item-division">Division</label><select class="field" id="item-division" name="division">${DIVISIONS.map((division) => `<option ${item.division === division ? "selected" : ""}>${division}</option>`).join("")}</select></div>
+            <div class="form-group full"><label for="item-description">Description</label><input class="field" id="item-description" name="description" value="${escapeHtml(item.description)}" /></div>
+            ${
+              editing
+                ? `<div class="form-group"><label for="item-division">Division</label><select class="field" id="item-division" name="division">${DIVISIONS.map((division) => `<option ${item.division === division ? "selected" : ""}>${division}</option>`).join("")}</select></div>`
+                : `<div class="form-group"><label for="item-division">Division</label><input type="hidden" name="division" value="TTS" /><select class="field" id="item-division" disabled><option>TTS</option></select><span class="help-text">Division is selected when dispatching.</span></div>`
+            }
             ${
               editing
                 ? `<div class="form-group"><label for="item-status">Item status</label><select class="field" id="item-status" name="status">${ITEM_STATUSES.map((status) => `<option ${item.status === status ? "selected" : ""}>${status}</option>`).join("")}</select><span class="help-text">Discontinued stops restocking and reorder alerts. Archived hides the item by default and requires zero stock.</span></div>`
@@ -1156,6 +1221,7 @@ function openModal(modal, id = null) {
     user: "manageUsers",
     editUser: "manageUsers",
     deleteUser: "manageUsers",
+    editDispatchLog: "dispatchInventory",
   };
   const requiredPermission = permissionByModal[modal];
   if (requiredPermission && !can(requiredPermission)) {
@@ -1316,6 +1382,9 @@ function bindInventoryControls() {
 
 function bindForms() {
   document.querySelector("#dispatch-form")?.addEventListener("submit", handleDispatch);
+  document
+    .querySelector("#dispatch-ticket-form")
+    ?.addEventListener("submit", handleDispatchTicket);
   document.querySelector("#restock-form")?.addEventListener("submit", handleRestock);
   document.querySelector("#inventory-form")?.addEventListener("submit", handleInventory);
   document.querySelector("#user-form")?.addEventListener("submit", handleUser);
@@ -1358,6 +1427,7 @@ async function handleDispatch(event) {
       method: "POST",
       body: {
         quantity,
+        division: normalizeDivision(String(data.get("division")).trim()),
         destination: String(data.get("destination")).trim(),
         notes: String(data.get("notes")).trim(),
       },
@@ -1367,6 +1437,38 @@ async function handleDispatch(event) {
     toast("Items dispatched", `${quantity} ${item.name} removed from on-hand stock.`);
   } catch (error) {
     mutationError("Dispatch not saved", error);
+  }
+}
+
+async function handleDispatchTicket(event) {
+  event.preventDefault();
+  const entry = selectedLog();
+  if (!entry || entry.action !== "Dispatch") {
+    toast("Ticket not saved", "Choose a dispatch entry to edit.", "error");
+    return;
+  }
+
+  const data = new FormData(event.currentTarget);
+  const values = {
+    division: normalizeDivision(String(data.get("division")).trim()),
+    destination: String(data.get("destination")).trim(),
+    notes: String(data.get("notes")).trim(),
+  };
+  if (!values.destination) {
+    toast("Ticket not saved", "Destination is required.", "error");
+    return;
+  }
+
+  try {
+    await apiRequest(`/api/logs/${entry.id}/dispatch-ticket`, {
+      method: "PUT",
+      body: values,
+    });
+    dismissModal();
+    await refreshState();
+    toast("Dispatch ticket updated", `${entry.item} details were saved.`);
+  } catch (error) {
+    mutationError("Ticket not saved", error);
   }
 }
 

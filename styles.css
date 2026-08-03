@@ -280,6 +280,11 @@ textarea:focus-visible,
   background: var(--surface-soft);
 }
 
+.icon-button.compact {
+  width: 34px;
+  height: 34px;
+}
+
 .notification-dot {
   position: absolute;
   top: 2px;
@@ -978,7 +983,7 @@ textarea.field {
 
 .log-row {
   display: grid;
-  grid-template-columns: 150px 140px 120px minmax(150px, 1fr) 90px;
+  grid-template-columns: 150px 140px 120px minmax(150px, 1fr) 90px 70px;
   gap: 16px;
   align-items: center;
   padding: 15px 20px;
@@ -1728,8 +1733,8 @@ textarea.field {
   }
 
   .log-row {
-    grid-template-columns: 120px 110px 110px minmax(150px, 1fr) 70px;
-    min-width: 700px;
+    grid-template-columns: 120px 110px 110px minmax(150px, 1fr) 70px 70px;
+    min-width: 780px;
   }
 
   .section-card.log-card {

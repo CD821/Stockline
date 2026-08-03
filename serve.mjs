@@ -290,6 +290,32 @@ function inventoryValues(body) {
   };
 }
 
+function normalizeDivision(value) {
+  return ["TTS", "Bespoke"].includes(value) ? value : "TTS";
+}
+
+function formatDispatchDetails({ division, destination, notes }) {
+  return [
+    `Division: ${normalizeDivision(division)}`,
+    destination ? `Destination: ${destination}` : "",
+    notes ? `Notes: ${notes}` : "",
+  ]
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function dispatchTicketValues(body) {
+  const values = {
+    division: normalizeDivision(body.division),
+    destination: requireText(body.destination, "Destination"),
+    notes: String(body.notes || "").trim(),
+  };
+  return {
+    ...values,
+    details: formatDispatchDetails(values),
+  };
+}
+
 async function activeAdministratorCount(client) {
   const result = await client.query(
     `
@@ -521,10 +547,7 @@ async function handleApi(request, response, url) {
     const body = await readJson(request);
     const quantity = requireNonnegativeInteger(body.quantity, "Quantity");
     if (quantity < 1) throw httpError(400, "Quantity must be at least 1.");
-    const details = [body.destination, body.notes]
-      .map((value) => String(value || "").trim())
-      .filter(Boolean)
-      .join(" | ");
+    const ticket = dispatchTicketValues(body);
     const item = await withTransaction(async (client) => {
       const current = await client.query(
         "select * from inventory_items where id = $1 for update",
@@ -552,7 +575,7 @@ async function handleApi(request, response, url) {
           )
           values ($1, $2, 'Dispatch', $3, $4)
         `,
-        [dispatchMatch[1], user.id, -quantity, details],
+        [dispatchMatch[1], user.id, -quantity, ticket.details],
       );
       await writeAudit(
         client,
@@ -560,11 +583,58 @@ async function handleApi(request, response, url) {
         "Dispatch",
         row.name,
         -quantity,
-        details,
+        ticket.details,
       );
       return result.rows[0];
     });
     return sendJson(response, 200, { item: mapInventory(item) });
+  }
+
+  const dispatchTicketMatch = path.match(/^\/api\/logs\/(\d+)\/dispatch-ticket$/);
+  if (dispatchTicketMatch && method === "PUT") {
+    requirePermission(user, "dispatchInventory");
+    const ticket = dispatchTicketValues(await readJson(request));
+    const log = await withTransaction(async (client) => {
+      const current = await client.query(
+        `
+          select id, created_at, user_name_snapshot, action, item, quantity,
+                 details
+          from audit_logs
+          where id = $1
+          for update
+        `,
+        [dispatchTicketMatch[1]],
+      );
+      if (!current.rowCount) throw httpError(404, "Dispatch ticket not found.");
+      const row = current.rows[0];
+      if (row.action !== "Dispatch") {
+        throw httpError(409, "Only dispatch tickets can be edited here.");
+      }
+
+      const previousDetails = row.details || "";
+      if (previousDetails === ticket.details) return row;
+
+      const updated = await client.query(
+        `
+          update audit_logs
+          set details = $2
+          where id = $1
+          returning id, created_at, user_name_snapshot, action, item, quantity,
+                    details
+        `,
+        [dispatchTicketMatch[1], ticket.details],
+      );
+      await writeAudit(
+        client,
+        user,
+        "Dispatch ticket edited",
+        row.item,
+        null,
+        `Ticket ${row.id}: ${previousDetails || "No details"} -> ${ticket.details}`,
+      );
+      return updated.rows[0];
+    });
+    return sendJson(response, 200, { log: mapLog(log) });
   }
 
   const restockMatch = path.match(/^\/api\/inventory\/(\d+)\/restock$/);
