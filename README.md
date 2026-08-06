@@ -8,6 +8,8 @@ Inventory management backed by PostgreSQL, with:
 - 258 inventory lines imported from the SharePoint `Inventory` tab
 - Dispatch and restock transactions with row-level stock locking
 - Dispatch tickets capture Division and Destination separately and can be edited with an audit trail
+- Dispatch Log filters by division and date range, with movement balance shown per row
+- Overview highlights items with the most dispatch and receive movement
 - Low-stock notifications and downloadable purchase lists
 - Editable users, roles, and permissions
 - Filterable and sortable audit and dispatch logs

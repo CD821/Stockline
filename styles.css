@@ -993,6 +993,20 @@ textarea.field {
   min-width: 180px;
 }
 
+.date-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.log-date {
+  width: auto;
+  min-width: 142px;
+}
+
 .log-results {
   padding: 10px 20px;
   color: var(--muted);
@@ -1009,7 +1023,7 @@ textarea.field {
 
 .log-row {
   display: grid;
-  grid-template-columns: 150px 140px 120px minmax(150px, 1fr) 90px 70px;
+  grid-template-columns: 150px 140px 120px minmax(150px, 1fr) 90px 90px 70px;
   gap: 16px;
   align-items: center;
   padding: 15px 20px;
@@ -1038,6 +1052,12 @@ textarea.field {
 
 .log-quantity.negative {
   color: var(--red);
+}
+
+.log-balance {
+  color: #25384b;
+  font-weight: 750;
+  text-align: right;
 }
 
 .team-grid {
@@ -1759,8 +1779,8 @@ textarea.field {
   }
 
   .log-row {
-    grid-template-columns: 120px 110px 110px minmax(150px, 1fr) 70px 70px;
-    min-width: 780px;
+    grid-template-columns: 120px 110px 110px minmax(150px, 1fr) 70px 80px 70px;
+    min-width: 860px;
   }
 
   .section-card.log-card {
@@ -1848,9 +1868,15 @@ textarea.field {
 
   .log-toolbar .search-field,
   .log-filter,
-  .log-sort {
+  .log-sort,
+  .date-filter,
+  .log-date {
     width: 100%;
     max-width: none;
+  }
+
+  .date-filter {
+    justify-content: space-between;
   }
 
   .form-grid {

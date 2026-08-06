@@ -73,6 +73,9 @@ const ui = {
   logSearch: "",
   logUser: "All users",
   logAction: "All actions",
+  logDivision: "All divisions",
+  logDateFrom: "",
+  logDateTo: "",
   logSort: "newest",
   modal: null,
   selectedId: null,
@@ -432,14 +435,10 @@ function summaryView() {
 
 function overviewView() {
   const lowItems = state.inventory.filter(isLow);
-  const currentInventory = state.inventory.filter(isCurrent);
+  const topMovement = mostMovedItems();
   const hasDispatchableItems = state.inventory.some(
     (item) => item.status !== "Archived" && available(item) > 0,
   );
-  const divisionTotals = currentInventory.reduce((totals, item) => {
-    totals[item.division] = (totals[item.division] || 0) + available(item);
-    return totals;
-  }, {});
 
   return `
     <section class="page">
@@ -449,16 +448,19 @@ function overviewView() {
       ${summaryView()}
       <div class="overview-grid">
         <section class="section-card">
-          <div class="section-heading"><div><h2>Stock by division</h2><p>Available units across active inventory.</p></div></div>
-          <ul class="overview-list">
-            ${Object.entries(divisionTotals)
-              .map(
-                ([division, amount]) => `
-                  <li class="overview-row"><span><strong>${escapeHtml(division)}</strong><span>${currentInventory.filter((item) => item.division === division).length} inventory lines</span></span><span class="overview-number">${formatNumber(amount)}</span></li>
-                `,
-              )
-              .join("")}
-          </ul>
+          <div class="section-heading"><div><h2>Most movement</h2><p>Items with the most dispatches and receives.</p></div></div>
+          ${
+            topMovement.length
+              ? `<ul class="overview-list">${topMovement
+                  .map((entry) => {
+                    const moves = entry.dispatches + entry.receives;
+                    return `
+                      <li class="overview-row"><span><strong>${escapeHtml(entry.item.name)}</strong><span>${formatNumber(entry.dispatches)} dispatches | ${formatNumber(entry.receives)} receives | ${formatNumber(entry.units)} units moved</span></span><span class="overview-number">${formatNumber(moves)}</span></li>
+                    `;
+                  })
+                  .join("")}</ul>`
+              : `<div class="empty-state"><div><strong>No movement yet</strong><span>Dispatches and receives will appear here.</span></div></div>`
+          }
         </section>
         <section class="section-card">
           <div class="section-heading"><div><h2>Items to reorder</h2><p>At or below minimum quantity.</p></div><button class="text-button" data-open="purchase">View list</button></div>
@@ -736,8 +738,100 @@ function activityItem(entry) {
   `;
 }
 
+function inventoryMapByName() {
+  return new Map(state.inventory.map((item) => [item.name, item]));
+}
+
+function explicitDivisionFromDetails(details = "") {
+  const match = String(details).match(/(?:^|\|)\s*Division:\s*(TTS|Bespoke)\b/i);
+  return match ? normalizeDivision(match[1]) : "";
+}
+
+function divisionForLog(entry, inventoryByName = inventoryMapByName()) {
+  return (
+    explicitDivisionFromDetails(entry.details) ||
+    inventoryByName.get(entry.item)?.division ||
+    ""
+  );
+}
+
+function dateFromInput(value, endOfDay = false) {
+  if (!value) return null;
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00"}`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function movementAction(entry) {
+  return entry.action === "Dispatch" || entry.action === "Restock";
+}
+
+function logBalances() {
+  const inventoryByName = inventoryMapByName();
+  const runningByItem = new Map(
+    state.inventory.map((item) => [item.name, Number(item.quantity || 0)]),
+  );
+  const balances = new Map();
+  [...state.logs]
+    .sort(
+      (a, b) =>
+        new Date(b.timestamp) - new Date(a.timestamp) ||
+        Number(b.id || 0) - Number(a.id || 0),
+    )
+    .forEach((entry) => {
+      if (entry.quantity === null || entry.quantity === undefined) return;
+      const quantity = Number(entry.quantity);
+      if (
+        !inventoryByName.has(entry.item) ||
+        !Number.isFinite(quantity) ||
+        !["Dispatch", "Restock", "Item created"].includes(entry.action)
+      ) {
+        return;
+      }
+      const currentBalance = runningByItem.get(entry.item);
+      if (!Number.isFinite(currentBalance)) return;
+      balances.set(entry.id, currentBalance);
+      runningByItem.set(entry.item, currentBalance - quantity);
+    });
+  return balances;
+}
+
+function mostMovedItems(limit = 6) {
+  const inventoryByName = inventoryMapByName();
+  const movement = new Map();
+  state.logs.filter(movementAction).forEach((entry) => {
+    const item = inventoryByName.get(entry.item);
+    if (!item) return;
+    const quantity = Math.abs(Number(entry.quantity));
+    if (!Number.isFinite(quantity)) return;
+    const current = movement.get(entry.item) || {
+      item,
+      dispatches: 0,
+      receives: 0,
+      units: 0,
+    };
+    if (entry.action === "Dispatch") current.dispatches += 1;
+    if (entry.action === "Restock") current.receives += 1;
+    current.units += quantity;
+    movement.set(entry.item, current);
+  });
+  return [...movement.values()]
+    .sort((a, b) => {
+      const aMoves = a.dispatches + a.receives;
+      const bMoves = b.dispatches + b.receives;
+      return (
+        bMoves - aMoves ||
+        b.units - a.units ||
+        a.item.name.localeCompare(b.item.name)
+      );
+    })
+    .slice(0, limit);
+}
+
 function visibleLogs() {
   const query = ui.logSearch.trim().toLowerCase();
+  const inventoryByName = inventoryMapByName();
+  const fromDate = dateFromInput(ui.logDateFrom);
+  const toDate = dateFromInput(ui.logDateTo, true);
   const logs = state.logs.filter((entry) => {
     const matchesSearch = [entry.user, entry.action, entry.item, entry.details]
       .join(" ")
@@ -746,7 +840,20 @@ function visibleLogs() {
     const matchesUser = ui.logUser === "All users" || entry.user === ui.logUser;
     const matchesAction =
       ui.logAction === "All actions" || entry.action === ui.logAction;
-    return matchesSearch && matchesUser && matchesAction;
+    const division = divisionForLog(entry, inventoryByName);
+    const matchesDivision =
+      ui.logDivision === "All divisions" || division === ui.logDivision;
+    const timestamp = new Date(entry.timestamp);
+    const matchesDateFrom = !fromDate || timestamp >= fromDate;
+    const matchesDateTo = !toDate || timestamp <= toDate;
+    return (
+      matchesSearch &&
+      matchesUser &&
+      matchesAction &&
+      matchesDivision &&
+      matchesDateFrom &&
+      matchesDateTo
+    );
   });
 
   const comparators = {
@@ -763,8 +870,18 @@ function visibleLogs() {
 
 function logsView() {
   const logs = visibleLogs();
+  const balances = logBalances();
+  const inventoryByName = inventoryMapByName();
   const users = [...new Set(state.logs.map((entry) => entry.user))].sort();
   const actions = [...new Set(state.logs.map((entry) => entry.action))].sort();
+  const divisions = [
+    ...new Set([
+      ...DIVISIONS,
+      ...state.logs
+        .map((entry) => divisionForLog(entry, inventoryByName))
+        .filter(Boolean),
+    ]),
+  ];
 
   return `
     <section class="page">
@@ -782,6 +899,12 @@ function logsView() {
             <option>All actions</option>
             ${actions.map((action) => `<option ${ui.logAction === action ? "selected" : ""}>${escapeHtml(action)}</option>`).join("")}
           </select>
+          <select class="field log-filter" id="log-division-filter" aria-label="Filter log by division">
+            <option>All divisions</option>
+            ${divisions.map((division) => `<option ${ui.logDivision === division ? "selected" : ""}>${escapeHtml(division)}</option>`).join("")}
+          </select>
+          <label class="date-filter"><span>From</span><input class="field log-date" id="log-date-from" type="date" value="${escapeHtml(ui.logDateFrom)}" /></label>
+          <label class="date-filter"><span>To</span><input class="field log-date" id="log-date-to" type="date" value="${escapeHtml(ui.logDateTo)}" /></label>
           <select class="field log-sort" id="log-sort" aria-label="Sort Dispatch Log">
             <option value="newest" ${ui.logSort === "newest" ? "selected" : ""}>Newest first</option>
             <option value="oldest" ${ui.logSort === "oldest" ? "selected" : ""}>Oldest first</option>
@@ -793,7 +916,7 @@ function logsView() {
           </select>
         </div>
         <div class="log-results">${logs.length} of ${state.logs.length} entries</div>
-        <div class="log-row header"><span>Date & time</span><span>User</span><span>Action</span><span>Item / details</span><span>Quantity</span><span>Actions</span></div>
+        <div class="log-row header"><span>Date & time</span><span>User</span><span>Action</span><span>Item / details</span><span>Quantity</span><span>Balance</span><span>Actions</span></div>
         <div>
           ${
             logs.length
@@ -806,6 +929,7 @@ function logsView() {
                         <span>${escapeHtml(entry.action)}</span>
                         <span><strong>${escapeHtml(entry.item)}</strong><br /><small>${escapeHtml(entry.details || "")}</small></span>
                         <span class="log-quantity ${Number(entry.quantity) < 0 ? "negative" : ""}">${entry.quantity === null ? "—" : `${entry.quantity > 0 ? "+" : ""}${formatNumber(entry.quantity)}`}</span>
+                        <span class="log-balance">${balances.has(entry.id) ? formatNumber(balances.get(entry.id)) : "-"}</span>
                         <span>${entry.action === "Dispatch" && can("dispatchInventory") ? `<button class="icon-button compact" data-action="editDispatchLog" data-id="${entry.id}" aria-label="Edit dispatch ticket">${icon("edit", "icon-sm")}</button>` : ""}</span>
                       </div>
                     `,
@@ -1686,6 +1810,21 @@ function bindLogControls() {
     render();
   });
 
+  document.querySelector("#log-division-filter")?.addEventListener("change", (event) => {
+    ui.logDivision = event.target.value;
+    render();
+  });
+
+  document.querySelector("#log-date-from")?.addEventListener("change", (event) => {
+    ui.logDateFrom = event.target.value;
+    render();
+  });
+
+  document.querySelector("#log-date-to")?.addEventListener("change", (event) => {
+    ui.logDateTo = event.target.value;
+    render();
+  });
+
   document.querySelector("#log-sort")?.addEventListener("change", (event) => {
     ui.logSort = event.target.value;
     render();
@@ -1851,14 +1990,18 @@ function downloadCsv(filename, rows) {
 function bindDownloads() {
   document.querySelector("#export-log")?.addEventListener("click", () => {
     const logs = visibleLogs();
+    const balances = logBalances();
+    const inventoryByName = inventoryMapByName();
     downloadCsv("stockline-audit-log.csv", [
-      ["Timestamp", "User", "Action", "Item", "Quantity", "Details"],
+      ["Timestamp", "User", "Action", "Item", "Division", "Quantity", "Balance", "Details"],
       ...logs.map((entry) => [
         entry.timestamp,
         entry.user,
         entry.action,
         entry.item,
+        divisionForLog(entry, inventoryByName),
         entry.quantity ?? "",
+        balances.get(entry.id) ?? "",
         entry.details,
       ]),
     ]);
